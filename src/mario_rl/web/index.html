@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mario · RL Lab</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Inicio"><span class="brand-icon">M</span><span>MARIO <b>/ RL LAB</b></span></a>
+    <div class="top-meta"><span class="status-dot"></span> Comparación local <span class="tag">DQN</span></div>
+  </header>
+  <main>
+    <section class="intro">
+      <div><p class="eyebrow">OBSERVAR · COMPARAR · ENTENDER</p><h1>Aprender a jugar.<br><span>Una decisión a la vez.</span></h1>
+      <p class="subtitle">Cada agente juega en su propio entorno. Las políticas están congeladas: aquí observamos, no entrenamos.</p></div>
+      <div class="session"><span class="label">SESIÓN DE EVALUACIÓN</span><strong id="environment-title">Conectando…</strong>
+        <div class="session-data"><span>Nivel <b>1–1</b></span><span>Decisión <b id="tick">0</b></span><span>Seed <b id="session-seed">7</b></span></div>
+      </div>
+    </section>
+    <aside id="demo-warning" class="warning" hidden><strong>ENTORNO SINTÉTICO DE PRUEBA · NO ES MARIO NI NES</strong>
+      <span>Verifica la infraestructura. No demuestra que un agente haya aprendido a jugar Mario.</span></aside>
+    <div id="error" class="error" role="alert" hidden></div>
+    <section class="toolbar" aria-label="Controles de comparación">
+      <div class="playback"><button id="play" class="primary" type="button">▶ Reproducir</button>
+        <button id="step" type="button" title="Una decisión por agente activo">Paso →</button><button id="reset" type="button">↺ Reiniciar</button></div>
+      <div class="settings"><label>Seed <input id="seed" type="number" min="0" max="2147483647" value="7"></label>
+        <label>Velocidad <select id="speed"><option value="0.25">0,25×</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label></div>
+      <div class="export"><button id="record" type="button">● Grabar MP4</button><a class="button" href="/api/report" download="comparison.json">↓ Reporte</a></div>
+    </section>
+    <div class="section-heading"><h2>Agentes en acción <span id="agent-count">—</span></h2><span id="playback-status">Pausado</span></div>
+    <section id="panels" class="panels" aria-label="Partidas de los agentes"></section>
+    <section class="bottom-grid">
+      <article class="note"><span class="eyebrow">LECTURA DEL EXPERIMENTO</span><h3>No confundir movimiento con aprendizaje.</h3>
+        <p>Compara la distancia máxima y el retorno bajo las mismas condiciones. Un DQN sin entrenar puede quedarse quieto: eso es un resultado válido, no un error del visor.</p></article>
+      <article class="note"><span class="eyebrow">EVIDENCIA REPRODUCIBLE</span><h3>Conserva lo que observas.</h3>
+        <p>El MP4 contiene un frame por decisión, sin audio. El reporte registra entorno, seed, políticas y resultados. Cambiar un agente reinicia todos los paneles.</p>
+        <a id="video-download" href="/api/video" hidden download>↓ Descargar última grabación</a><span id="record-status" class="record-status"></span></article>
+    </section>
+    <footer><span>MARIO / RL LAB · Proyecto académico</span><span>RGB del entorno → visor · 4 × 84 × 84 → modelo</span></footer>
+  </main>
+  <template id="panel-template">
+    <article class="panel">
+      <div class="panel-head"><span class="panel-number"></span><span class="panel-status">LISTO</span></div>
+      <label class="policy-label">POLÍTICA<select class="policy-select" aria-label="Seleccionar agente"></select></label>
+      <div class="screen"><img class="game-frame" alt="Pantalla de la partida del agente"><span class="screen-badge" hidden>EPISODIO FINALIZADO</span></div>
+      <div class="panel-body"><div class="action-row"><span>ACCIÓN ELEGIDA</span><strong class="action">—</strong></div>
+        <div class="metrics"><div><span>X MÁXIMA</span><strong class="progress">0</strong></div><div><span>RETORNO</span><strong class="reward">0,00</strong></div><div><span>DECISIONES</span><strong class="decisions">0</strong></div></div>
+        <div class="chart-heading"><span>PROGRESO RECIENTE</span><span class="raw-frames">0 frames</span></div>
+        <svg class="sparkline" viewBox="0 0 300 42" role="img" aria-label="Progreso horizontal reciente"><polyline points="0,40 300,40"></polyline></svg>
+        <details class="q-detail"><summary>Valores Q de la última decisión</summary><div class="q-values"></div></details>
+      </div>
+    </article>
+  </template>
+</body>
+</html>

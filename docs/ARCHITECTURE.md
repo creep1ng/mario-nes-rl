@@ -8,7 +8,7 @@
 | Emulador | `nes-py` con ROM externa. | No distribuir assets de Nintendo. |
 | Algoritmo | DQN clásico: replay uniforme, target, epsilon-greedy. | Explicar cada paso sin framework RL. |
 | UI | Navegador local, HTML/CSS/JS, stdlib HTTP. | No toolchain frontend ni backend complejo. |
-| Concurrencia | Tick serializado; un entorno por panel. | Aislamiento y depuración antes que throughput. |
+| Concurrencia | Visor: tick serializado, un entorno por panel. Entrenamiento: `--envs N` procesos de emulador. | Aislamiento en el visor; throughput al entrenar. |
 | Checkpoints | `weights_only=True`, compatibilidad explícita, escritura atómica. | Evitar pickle arbitrario y lecturas incompletas. |
 | Fixture | Solo `--demo`, aviso visible. | Verificar infraestructura sin fingir NES. |
 
@@ -19,9 +19,13 @@
 - `fixture.py`: plataforma geométrica sintética para E2E, no Nintendo.
 - `preprocessing.py`: repetición de acción, límite externo y stack visual.
 - `model.py`: tres convoluciones + FC512 + salida lineal Q de siete acciones.
-- `replay.py`: transiciones inmutables por propiedad de sus arrays, muestreo uniforme.
+- `replay.py`: memoria circular en arrays NumPy preasignados; muestreo uniforme
+  idéntico al `deque` original, lote construido con un solo indexado por campo.
 - `agent.py`: epsilon-greedy, Bellman target, Huber, Adam, target y checkpoints.
-- `training.py`: coordinación explícita y artefactos CSV/JSON.
+- `parallel.py`: N emuladores, uno por proceso `spawn`; `step` envía todas las
+  acciones y luego recoge. Con N=1 el emulador vive en el proceso principal.
+- `training.py`: coordinación explícita y artefactos CSV/JSON; cada ronda procesa
+  las N transiciones como decisiones individuales, en orden de entorno.
 - `evaluation.py`, `policies.py`: políticas congeladas, sin aprendizaje.
 - `comparison.py`: paneles independientes, reset común y métricas.
 - `server.py`, `web/`: HTTP local y controles; GET no avanza la simulación.
@@ -132,5 +136,7 @@ La reproducción real depende del rendimiento de inferencia/PNG del equipo.
 - Checkpoints no permiten resume exacto: replay, partida y RNG se reinician;
   se recoge warmup de experiencias nuevas antes de más updates. Episodios y
   selección best pertenecen a la continuación; se registra procedencia/SHA.
-- CPU predeterminado; GPU requiere otro entorno PyTorch.
-- Sin sonido, multijugador en un mismo mundo, Double DQN, curriculum ni entrenamiento distribuido.
+- CPU predeterminado; GPU requiere otro entorno PyTorch (`.venv-cuda`, ver README)
+  y no es reproducible bit a bit por cuDNN.
+- Sin sonido, multijugador en un mismo mundo, Double DQN, curriculum ni entrenamiento
+  distribuido. `--envs` paraleliza solo la recolección; hay un único aprendiz.

@@ -155,7 +155,8 @@ P=/home/creep/workshop/rl-mario-bros
 - Los hiperparámetros (`epsilon-decay`, gamma, seed, batch, etc.) y límites del
   entorno se heredan salvo flags explícitos. No hace falta repetir `--epsilon-decay
   500000`. `--rom` o `--demo` siguen siendo explícitos. Para mover un checkpoint
-  GPU a CPU, añade `--device cpu`; GPU no fue verificada en estas pruebas.
+  entre GPU y CPU, añade `--device cpu` o `--device cuda`. `--envs` también se
+  hereda y puede cambiarse al reanudar: un checkpoint de 1 emulador continúa con 8.
 - Replay, partida e historial RNG **se reinician**. Antes de nuevos updates se
   recogen `warmup` decisiones nuevas y un batch completo, manteniendo epsilon
   global (no se fuerza a1). Si el presupuesto nuevo es menor que ese refill,
@@ -181,10 +182,70 @@ evaluación y checkpoint cada 25.000 decisiones. Consulta todos los flags:
 .venv/bin/python -m mario_rl train --help
 ```
 
-**Recursos:** un replay ingenuo con ambos stacks `uint8` ocupa ~1,13 GB de
-píxeles para 20.000 transiciones, más sobrecostes. La CNN puede entrenarse en CPU,
-pero completar el nivel no tiene un plazo garantizado ni está demostrado con una
-prueba corta.
+**Recursos:** el replay guarda ambos stacks `uint8` en arrays preasignados:
+~1,13 GB de píxeles para 20.000 transiciones (~56 KB cada una). La CNN puede
+entrenarse en CPU, pero completar el nivel no tiene un plazo garantizado ni está
+demostrado con una prueba corta.
+
+### Acelerar: emuladores en paralelo y GPU
+
+Cada decisión cuesta casi lo mismo en el emulador (~4,5 ms) que en la red
+(~3,6 ms por decisión en CPU). Por eso hacen falta dos cambios a la vez:
+
+- **`--envs N`** lanza N emuladores, cada uno en su propio proceso y núcleo.
+  Cada ronda la red elige N acciones en un solo forward y los N emuladores
+  avanzan a la vez. El aprendizaje, los checkpoints y los CSV siguen contando
+  **decisiones**: con `--envs 8` se sigue haciendo un update cada 4 decisiones.
+  `--envs 1` (predeterminado) es exactamente el bucle original, verificado con
+  pesos finales idénticos. `episodes.csv` añade la columna `env`.
+- **`--device cuda`** entrena la red en la GPU. Requiere un PyTorch con CUDA,
+  instalado en un entorno separado para no alterar `.venv`:
+
+```bash
+uv venv --python 3.13 .venv-cuda
+uv pip install --python .venv-cuda/bin/python "torch==2.14.1" \
+  --index-url https://download.pytorch.org/whl/cu132
+uv pip install --python .venv-cuda/bin/python -e ".[nes]" --no-deps
+uv pip install --python .venv-cuda/bin/python "numpy>=2.1,<3" "pillow>=11,<13" \
+  "gymnasium>=1.1,<2" "tqdm>=4.67,<5" "nes-py==9.0.1"
+```
+
+Usa ese intérprete directamente; `uv run` sincroniza `.venv`, no `.venv-cuda`:
+
+```bash
+.venv-cuda/bin/python -m mario_rl train \
+  --rom .local/roms/super-mario-bros.nes \
+  --envs 8 --device cuda \
+  --steps 1000000 --epsilon-decay 500000 \
+  --checkpoint-every 25000 --eval-every 25000 --eval-episodes 1 \
+  --seed 7 --output runs/dqn-seed-7-gpu
+```
+
+Medido en esta máquina (12 núcleos, RTX 4070 SUPER), 5.000 decisiones con
+aprendizaje activo:
+
+| Configuración | Decisiones/s | RAM del árbol de procesos* |
+|---|---|---|
+| CPU, `--envs 1` | 104 | 0,8 GB |
+| CPU, `--envs 8` | 180 | 1,2 GB |
+| GPU, `--envs 1` | 186 | 2,1 GB |
+| GPU, `--envs 8` | 600 | 2,5 GB |
+| GPU, `--envs 10` | 679 | 2,6 GB |
+
+\* Con el replay casi vacío; súmale ~1,1 GB cuando se llena (20.000).
+
+En solo CPU, más emuladores apenas ayudan: el cuello de botella pasa a ser la
+red. Deja dos núcleos libres (`--envs` ≤ núcleos − 2); el CLI avisa si no.
+**Vigila la RAM:** si el sistema supera su umbral de memoria, systemd-oomd puede
+matar la sesión de terminal completa sin guardar `interrupted.pt`.
+
+En GPU el aprendizaje no es reproducible bit a bit: cuDNN acumula gradientes
+de convolución con operaciones atómicas. En CPU sí lo es, también con `--envs N`.
+
+**Evaluación en NES:** el reset parte siempre del mismo estado y la política
+evaluada es determinista, así que todos los episodios de una evaluación son
+idénticos. `--eval-episodes` mayor que 1 solo repite la misma partida; la
+variación de `x` entre evaluaciones viene de los cambios de pesos.
 
 ## Evaluar
 
@@ -244,6 +305,14 @@ presupuesto global, protección del origen y Ctrl+C):
 El checkpoint del usuario es opcional y se lee sin modificarlo. La continuación
 de prueba solo ejecuta 40 decisiones nuevas en `artifacts/resume/run-*/`; no lanza
 el entrenamiento largo. Reporte y comandos quedan en `artifacts/resume/report.json`.
+
+Para verificar el modo paralelo (pasos exactos, CSV, reanudar con `--envs`,
+Ctrl+C sobre todo el grupo de procesos y ausencia de procesos huérfanos):
+
+```bash
+.venv/bin/python tests/parallel_e2e.py --rom .local/roms/super-mario-bros.nes
+.venv-cuda/bin/python tests/parallel_e2e.py --rom .local/roms/super-mario-bros.nes --device cuda
+```
 
 Para una comprobación breve del emulador:
 

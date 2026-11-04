@@ -40,11 +40,12 @@ class TrainConfig:
     eval_episodes: int = 5
     checkpoint_every: int = 25_000
     device: str = 'cpu'
+    envs: int = 1  # Parallel emulators, one process each. 1 = original loop.
 
     def validate(self) -> None:
         positive = ['steps', 'batch_size', 'replay_capacity', 'epsilon_decay',
                     'learn_every', 'target_every', 'eval_every', 'eval_episodes',
-                    'checkpoint_every']
+                    'checkpoint_every', 'envs']
         for field in positive:
             if getattr(self, field) < 1:
                 raise ValueError(f'{field} debe ser positivo.')

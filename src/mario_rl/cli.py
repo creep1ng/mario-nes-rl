@@ -1,6 +1,7 @@
 """CLI boundaries keep experiments reproducible and the browser optional."""
 import argparse
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import signal
 import sys
@@ -30,9 +31,13 @@ def build_parser():
         if command == 'train':
             # None distinguishes an explicit CLI override from an inherited value.
             fields = ('steps', 'warmup', 'batch_size', 'replay_capacity', 'epsilon_decay',
-                      'learn_every', 'target_every', 'eval_every', 'eval_episodes', 'checkpoint_every')
+                      'learn_every', 'target_every', 'eval_every', 'eval_episodes', 'checkpoint_every',
+                      'envs')
+            helps = {'envs': 'Emuladores en paralelo, un proceso y núcleo de CPU cada uno '
+                             '(1 = bucle original). Recomendado: núcleos − 2.'}
             for field in fields:
-                subparser.add_argument('--' + field.replace('_', '-'), type=int, default=None)
+                subparser.add_argument('--' + field.replace('_', '-'), type=int, default=None,
+                                       help=helps.get(field))
             for field in ('gamma', 'learning_rate', 'epsilon_start', 'epsilon_end'):
                 subparser.add_argument('--' + field.replace('_', '-'), type=float, default=None)
             subparser.add_argument('--device', default=None)
@@ -65,6 +70,10 @@ def training_configuration(args):
                         saved.get('config', {}).get(name, getattr(defaults, name)))
     config = TrainConfig(**values)
     config.validate()
+    cores = os.cpu_count() or 1
+    if config.envs >= cores:
+        print(f'Aviso: --envs {config.envs} con {cores} núcleos deja sin CPU libre a la red '
+              f'y al sistema; suele rendir más con {max(1, cores - 2)}.', file=sys.stderr)
     if saved and config.steps <= saved['step']:
         raise ValueError(f'--steps es un objetivo total y debe ser mayor que '
                          f'las {saved["step"]} decisiones del checkpoint.')

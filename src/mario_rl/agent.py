@@ -42,17 +42,36 @@ class DQNAgent:
             return self.online(pixels)[0].cpu().numpy()
 
     def select_action(self, observation, epsilon: float = 0.0) -> int:
-        if epsilon > 0 and self.rng.random() < epsilon:
-            return self.rng.randrange(len(ACTION_NAMES))
-        return int(self.q_values(observation).argmax())
+        return self.select_actions(observation[np.newaxis], epsilon)[0]
+
+    def select_actions(self, observations, epsilon: float = 0.0) -> list[int]:
+        """Epsilon-greedy for a stack of observations, one per environment.
+
+        Random choices are drawn first, in environment order, so one environment
+        consumes the RNG exactly like the original single-observation code. The
+        network then evaluates all greedy observations in a single forward pass.
+        """
+        actions: list[int | None] = []
+        for _ in range(len(observations)):
+            explore = epsilon > 0 and self.rng.random() < epsilon
+            actions.append(self.rng.randrange(len(ACTION_NAMES)) if explore else None)
+        greedy = [index for index, action in enumerate(actions) if action is None]
+        if greedy:
+            with torch.no_grad():
+                pixels = torch.as_tensor(np.asarray(observations)[greedy], device=self.device)
+                best = self.online(pixels).argmax(dim=1).cpu().tolist()
+            for index, action in zip(greedy, best):
+                actions[index] = int(action)
+        return actions
 
     def learn(self, replay: ReplayBuffer) -> float:
         batch = replay.sample(self.config.batch_size)
-        states = torch.as_tensor(np.stack([t.observation for t in batch]), device=self.device)
-        following = torch.as_tensor(np.stack([t.next_observation for t in batch]), device=self.device)
-        actions = torch.tensor([t.action for t in batch], device=self.device).unsqueeze(1)
-        rewards = torch.tensor([t.reward for t in batch], dtype=torch.float32, device=self.device)
-        terminals = torch.tensor([t.terminated for t in batch], dtype=torch.float32, device=self.device)
+        # Replay stays in CPU RAM as uint8; only this batch travels to the device.
+        states = torch.as_tensor(batch.observations, device=self.device)
+        following = torch.as_tensor(batch.next_observations, device=self.device)
+        actions = torch.as_tensor(batch.actions, device=self.device).unsqueeze(1)
+        rewards = torch.as_tensor(batch.rewards, device=self.device)
+        terminals = torch.as_tensor(batch.terminated, dtype=torch.float32, device=self.device)
         predicted = self.online(states).gather(1, actions).squeeze(1)
         with torch.no_grad():
             # External truncation is not a terminal state: retain its bootstrap.
@@ -77,8 +96,13 @@ class DQNAgent:
                       'config': asdict(self.config), 'environment': environment,
                       'actions': list(ACTION_NAMES), 'step': step, 'updates': self.updates}
         temporary = path.with_suffix('.tmp')
-        torch.save(checkpoint, temporary)
-        temporary.replace(path)  # Readers never observe a partially written checkpoint.
+        try:
+            torch.save(checkpoint, temporary)
+            temporary.replace(path)  # Readers never observe a partially written checkpoint.
+        except BaseException:
+            # Ctrl+C can land mid-write; never leave a half-written .tmp behind.
+            temporary.unlink(missing_ok=True)
+            raise
 
     @staticmethod
     def read_checkpoint(path: Path, device: str = 'cpu') -> dict:
